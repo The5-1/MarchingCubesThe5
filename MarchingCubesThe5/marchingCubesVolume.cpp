@@ -82,11 +82,15 @@ int marchingCubesVolume::findNearestNeighbour(glm::vec3 position, const std::vec
 }
 
 float marchingCubesVolume::evaluateHoppesImplicitFunction(glm::vec3 position, const std::vector<glm::vec3>& vertices, const std::vector<glm::vec3>& normals) {
+	//we passed the center of the grid-cell ("position")
+	//find the vertex closest to the cells center and get its pos and normal
 	int indexNN = this->findNearestNeighbour(position, vertices);
-
 	glm::vec3 vertex = vertices[indexNN];
 	glm::vec3 normal = normals[indexNN];
 
+	//now just take the dot-product of the vector from the vertex to the center and its normal
+	//--> signed field, the distance is the length that results from the dot product
+	//--> marching cubes then finds the ZERO between adjacent cells: if both are of different sign there is a zero intersection!
 	return glm::dot(position - vertex, normal);
 }
 
@@ -136,36 +140,54 @@ http://kucg.korea.ac.kr/new/research/Geometry/MLS/
 http://cs.nyu.edu/~panozzo/gp/03%20-%20Reconstruction.pdf
 */
 float marchingCubesVolume::evaluateWeightedLeastSquare(glm::vec3 position, const std::vector<glm::vec3>& vertices, const std::vector<glm::vec3>& normals, float epsilon) {
+	
+	//This happens for EACH point of our grid! (Needs to be optimized)
+	//A(x,y,z)*c = f(x,yz)
+	//a*x + b*y + c*z + d = f(x,y,z) is the implicit function we search
+	//c = coeficients (a,b,c,d)
 
 	int verticesSize = vertices.size();
-	Eigen::MatrixXf vertexMatrix(verticesSize, 4);
-	Eigen::MatrixXf weightMatrix(verticesSize, 4);
-	Eigen::VectorXf weightVector(verticesSize);
-	Eigen::VectorXf resultVector(verticesSize);
+	Eigen::MatrixXf vertexMatrix(verticesSize, 4); //= Matrix A with (x,y,z,1)
+	Eigen::MatrixXf weightMatrix(verticesSize, 4); //= Diagonal Matrix W with weights w_i for each f_i(x,y,z)
+	Eigen::VectorXf weightVector(verticesSize); //= temporary vector we convert to the diagonal matrix later
+	Eigen::VectorXf resultVector(verticesSize); //= given target values for f(x,y,z)
 
-	Eigen::VectorXf coefficientsFunction(4);
+	Eigen::VectorXf coefficientsVectorForImplicitFunction(4); //the coefficent vector c with the (a,b,c,d) we search
 
 	for (int i = 0; i < verticesSize; i++) {
-		//Fill Vertex Matirx
+		//Fill Vertex Matirx A (for the current grid point)
+		//each row with (x,y,z,1)
 		vertexMatrix(i, 0) = vertices[i].x;
 		vertexMatrix(i, 1) = vertices[i].y;
 		vertexMatrix(i, 2) = vertices[i].z;
 		vertexMatrix(i, 3) = 1.0f;
 
 		//Weights
+		//Square Euclidean distance from the vertex to the current grid point 
 		float squaredLength = (position.x - vertices[i].x)*(position.x - vertices[i].x) + (position.y - vertices[i].y)*(position.y - vertices[i].y) + (position.z - vertices[i].z)*(position.z - vertices[i].z);
 		weightVector(i) = 1.0f/(squaredLength + epsilon * epsilon);
 
 		//Result Vector
+		//dot product from vert-to-pos and normal
+		//if we were to just search for f(x,y,z) = 0, we would set all coefficients = 0
+		//we take the hoppes term to give some guidance for our functions (are we inside or outside?)
 		resultVector[i] = glm::dot(position - vertices[i], normals[i]);
 	}
 
 	weightMatrix = weightVector.asDiagonal();
 
 
-	coefficientsFunction = (vertexMatrix.transpose() * weightMatrix * weightMatrix * vertexMatrix).inverse() * vertexMatrix.transpose() * weightMatrix * weightMatrix * resultVector;
+	//to move all the matrices to one side of the equation we need the pseudo inverse (for our NxM matrix)
+	//We have: A * c = b
+	//We want: c = A^-1 * b
+	//Both sides: * A^T
+	//A^T * A results in NxN  matrix that can be inverted and move to the other side!
+	//so the Pseudoinverse is: (A^T * A^)^-1 * A^T
+	coefficientsVectorForImplicitFunction = (vertexMatrix.transpose() * weightMatrix * weightMatrix * vertexMatrix).inverse() * vertexMatrix.transpose() * weightMatrix * weightMatrix * resultVector;
 
-	return coefficientsFunction[0] * position.x + coefficientsFunction[1] * position.y + coefficientsFunction[2] * position.z + coefficientsFunction[3];
+
+	//lastly we evaluate our implicit function for the observed grid-point
+	return coefficientsVectorForImplicitFunction[0] * position.x + coefficientsVectorForImplicitFunction[1] * position.y + coefficientsVectorForImplicitFunction[2] * position.z + coefficientsVectorForImplicitFunction[3];
 }
 
 void marchingCubesVolume::computeVolumeForWeightedLSQ(const std::vector<glm::vec3>& vertices, const std::vector<glm::vec3>& normals, float epsilon)
