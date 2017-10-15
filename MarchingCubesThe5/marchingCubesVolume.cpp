@@ -141,7 +141,9 @@ http://cs.nyu.edu/~panozzo/gp/03%20-%20Reconstruction.pdf
 */
 float marchingCubesVolume::evaluateWeightedLeastSquare(glm::vec3 position, const std::vector<glm::vec3>& vertices, const std::vector<glm::vec3>& normals, float epsilon) {
 	
-	//This happens for EACH point of our grid! (Needs to be optimized)
+	//This happens for EACH point of our grid!
+	//For each grid-point we compare against ALL vertices of our mesh: We have O(m*n) so worst case is O(n²) where n is the larger one, grid or vertices
+
 	//A(x,y,z)*c = f(x,yz)
 	//a*x + b*y + c*z + d = f(x,y,z) is the implicit function we search
 	//c = coeficients (a,b,c,d)
@@ -163,7 +165,7 @@ float marchingCubesVolume::evaluateWeightedLeastSquare(glm::vec3 position, const
 		vertexMatrix(i, 3) = 1.0f;
 
 		//Weights
-		//Square Euclidean distance from the vertex to the current grid point 
+		//Since we go over all vertices we weight vertices at the other end of the mesh with their inverse distance!
 		float squaredLength = (position.x - vertices[i].x)*(position.x - vertices[i].x) + (position.y - vertices[i].y)*(position.y - vertices[i].y) + (position.z - vertices[i].z)*(position.z - vertices[i].z);
 		weightVector(i) = 1.0f/(squaredLength + epsilon * epsilon);
 
